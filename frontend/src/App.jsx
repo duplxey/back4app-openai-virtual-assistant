@@ -20,20 +20,20 @@ function App() {
     return assistant.get("initialMessage");
   }
 
+  async function reset(message) {
+    setMessages([
+      {role: "assistant", content: message},
+    ]);
+    setMessage("");
+    const threadId = await Parse.Cloud.run("createThread");
+    setThreadId(threadId);
+  }
+
   useEffect(() => {
     (async () => {
-      // Get the initial message from the assistant
       const assistantInitialMessage = await getInitialMessage();
       setInitialMessage(assistantInitialMessage);
-      setMessages([
-        ...messages,
-        {role: "assistant", content: assistantInitialMessage},
-      ]);
-
-      // Create a new thread
-      const threadId = await Parse.Cloud.run("createThread");
-      setThreadId(threadId);
-
+      await reset(assistantInitialMessage);
       setLoading(false);
     })();
   }, []);
@@ -42,7 +42,6 @@ function App() {
     event.preventDefault();
     if (loading || !threadId || !message) return;
 
-    // Add the message to the UI
     setMessages([
       ...messages,
       {role: "user", content: message},
@@ -50,15 +49,12 @@ function App() {
     setMessage("");
 
     setLoading(true);
-
     (async () => {
-      // Generate a response from the assistant
       const response = await Parse.Cloud.run("addMessage", {threadId, message});
       setMessages(messages => [
         ...messages,
         {role: "assistant", content: response},
       ]);
-
       setLoading(false);
     })();
   }
@@ -67,11 +63,8 @@ function App() {
     if (loading || !threadId) return;
 
     setLoading(true);
-
     (async () => {
-      // Create a new thread and reset the UI
-      setThreadId(await Parse.Cloud.run("createThread"));
-      setMessages([{role: "assistant", content: initialMessage}]);
+      await reset(initialMessage);
       setLoading(false);
     })();
   }
