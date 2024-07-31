@@ -12,8 +12,6 @@ Parse.initialize(
 );
 Parse.serverURL = "https://parseapi.back4app.com/";
 
-console.log(import.meta.env.VITE_BACK4APP_APPLICATION_ID);
-
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <App/>

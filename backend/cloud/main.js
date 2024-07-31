@@ -1,53 +1,51 @@
-const OpenAI = require("openai");
+/**
+ * Back4app Cloud Code for interacting with OpenAI's Assistants API
+ * (https://platform.openai.com/docs/assistants/overview)
+ *
+ * This script provides functions for:
+ *   - Setting up a virtual assistant (`setup()`)
+ *   - Creating and deleting threads (`createThread()`, `deleteThread()`)
+ *   - Generating responses from the assistant (`addMessage()`)
+ */
 
-// Initialize the OpenAI library
+const OpenAI = require("openai");
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-Parse.Cloud.afterSave("Assistant", async (request) => {
-  const assistantInstance = request.object;
+const ASSISTANT_INITIAL_MESSAGE = "Hi, my name is Math Bot. How can I help you?";
+const ASSISTANT_SETTINGS = {
+  name: "Math Bot",
+  instructions: "Very smart math bot that answers math questions.",
+  model: "gpt-3.5-turbo-0125",
+  tools: [],
+};
 
-  // If the object is not new, skip processing
-  if (assistantInstance.get("assistantId")) return;
+Parse.Cloud.define("setup", async (request) => {
+  const Assistant = Parse.Object.extend("Assistant");
+  const query = await new Parse.Query(Assistant);
+  const count = await query.count();
 
-  try {
-    // Use OpenAI API to create the assistant
-    const tools = assistantInstance.get("tools");
-    const assistant = await openai.beta.assistants.create({
-      name: assistantInstance.get("name"),
-      instructions: assistantInstance.get("instructions"),
-      tools: tools ? tools.map(tool => ({type: tool})) : undefined,
-      model: assistantInstance.get("model"),
-    });
-
-    // Store the assistant's id in the database
-    assistantInstance.set("assistantId", assistant.id);
-    await assistantInstance.save();
-
-    console.log("Successfully created a new OpenAI agent with ID: " + assistant.id);
-  } catch (e) {
-    console.error("Failed creating the assistant.");
-    console.error(e);
+  // Check if virtual assistant already exists
+  if (count !== 0) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR, "A virtual assistant already exists!");
   }
-});
 
-Parse.Cloud.afterDelete("Assistant", async (request) => {
-  const assistantInstance = request.object;
-  const assistantId = assistantInstance.get("assistantId");
+  // Use OpenAI's API to create an assistant
+  const openAssistant = await openai.beta.assistants.create(
+    ASSISTANT_SETTINGS,
+  );
 
-  // If object doesn't have an assistant id, skip processing
-  if (!assistantId) return;
-
-  try {
-    // Use OpenAI API to delete the assistant
-    await openai.beta.assistants.del(assistantId);
-
-    console.log("Successfully deleted an OpenAI agent with ID: " + assistantId);
-  } catch (e) {
-    console.error("Failed deleting the assistant.");
-    console.error(e);
+  // Store the assistant in Back4app database
+  const assistant = new Assistant();
+  for (const key in ASSISTANT_SETTINGS) {
+    assistant.set(key, ASSISTANT_SETTINGS[key]);
   }
+  assistant.set("initialMessage", ASSISTANT_INITIAL_MESSAGE);
+  assistant.set("assistantId", openAssistant.id);
+  await assistant.save();
+
+  return assistant.get("assistantId");
 });
 
 Parse.Cloud.define("createThread", async (request) => {
@@ -62,35 +60,40 @@ Parse.Cloud.define("deleteThread", async (request) => {
 
 Parse.Cloud.define("addMessage", async (request) => {
   const _threadId = request.params.threadId;
-  const _assistantId = request.params.assistantId;
   const _message = request.params.message;
 
-  // Verify all parameters are provided
-  if (!_threadId || !_assistantId || !_message) {
-    throw new Parse.Error(Parse.Error.VALIDATION_ERROR, "You need to provide: threadId, assistantId, message.");
+  // Verify all the parameters are provided
+  if (!_threadId || !_message) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR, "You need to provide: threadId & message.");
   }
 
-  let buffer = "";
-  try {
-    // Get the thread add a message and start a run
-    const thread = await openai.beta.threads.retrieve(_threadId);
-    const message = await openai.beta.threads.messages.create(
-      _threadId, {role: "user", content: _message},
-    );
-    let run = await openai.beta.threads.runs.createAndPoll(
-      _threadId, {assistant_id: _assistantId},
-    );
+  const Assistant = Parse.Object.extend("Assistant");
+  const query = await new Parse.Query(Assistant);
+  const count = await query.count();
 
-    // Add the last message to the buffer
-    if (run.status === "completed") {
-      const messages = await openai.beta.threads.messages.list(run.thread_id);
-      buffer += messages.data[0].content[0].text.value;
-    } else {
-      console.error("Failed to run the assistant.");
-    }
-  } catch (e) {
-    console.error(e);
-    throw new Parse.Error(Parse.Error.SCRIPT_FAILED, "An error occurred");
+  // Check if a virtual assistant exists
+  if (count === 0) {
+    throw new Parse.Error(Parse.Error.VALIDATION_ERROR, "A virtual assistant does not exist!");
+  }
+
+  const assistant = await new Parse.Query(Assistant).first();
+  const assistantId = assistant.get("assistantId");
+
+  // Get the thread, add the message, and generate a response
+  let buffer = "";
+  const message = await openai.beta.threads.messages.create(
+    _threadId, {role: "user", content: _message},
+  );
+  let run = await openai.beta.threads.runs.createAndPoll(
+    _threadId, {assistant_id: assistantId},
+  );
+
+  // Add the last message to the buffer
+  if (run.status === "completed") {
+    const messages = await openai.beta.threads.messages.list(run.thread_id);
+    buffer += messages.data[0].content[0].text.value;
+  } else {
+    console.error("Failed to run the assistant.");
   }
 
   return buffer;

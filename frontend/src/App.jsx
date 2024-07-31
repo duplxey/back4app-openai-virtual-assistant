@@ -53,8 +53,7 @@ function App() {
 
     (async () => {
       // Generate a response from the assistant
-      const assistantId = "asst_IhYqLxKvlFxHKGUcJSPGn04m";
-      const response = await Parse.Cloud.run("addMessage", {threadId, assistantId, message});
+      const response = await Parse.Cloud.run("addMessage", {threadId, message});
       setMessages(messages => [
         ...messages,
         {role: "assistant", content: response},
