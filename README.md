@@ -15,7 +15,7 @@ To setup the backend, follow the [article](#).
 3. Install the dependencies via `npm install`.
 4. Copy *.env.example* as *.env* and enter your credentials.
 5. Start the development server via `npm run dev`.
-6. Open the browser and navigate to [http://localhost:3000](http://localhost:3000).
+6. Open the browser and navigate to [http://localhost:5173](http://localhost:5173).
 
 ## Deployment
 
