@@ -1,4 +1,5 @@
 import {useEffect, useState} from "react";
+import Parse from "parse/dist/parse.min.js";
 
 import AssistantMessage from "./components/AssistantMessage.jsx";
 import UserMessage from "./components/UserMessage.jsx";
@@ -6,36 +7,74 @@ import Spinner from "./components/Spinner.jsx";
 
 function App() {
 
+  const [initialMessage, setInitialMessage] = useState(undefined);
   const [loading, setLoading] = useState(true);
 
+  const [threadId, setThreadId] = useState(undefined);
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([
-    {role: "assistant", content: "Hi! How can I help you?"},
-    {role: "user", content: "What is 2+2?"},
-    {role: "assistant", content: "2+2 is 4."},
-  ]);
+  const [messages, setMessages] = useState([]);
+
+  async function getInitialMessage() {
+    const Assistant = Parse.Object.extend("Assistant");
+    const assistant = await new Parse.Query(Assistant).first();
+    return assistant.get("initialMessage");
+  }
 
   useEffect(() => {
-    // TODO: fetch the initial message
-    setLoading(false);
+    (async () => {
+      // Get the initial message from the assistant
+      const assistantInitialMessage = await getInitialMessage();
+      setInitialMessage(assistantInitialMessage);
+      setMessages([
+        ...messages,
+        {role: "assistant", content: assistantInitialMessage},
+      ]);
+
+      // Create a new thread
+      const threadId = await Parse.Cloud.run("createThread");
+      setThreadId(threadId);
+
+      setLoading(false);
+    })();
   }, []);
 
   function onSubmit(event) {
     event.preventDefault();
-    if (loading || !message) return;
+    if (loading || !threadId || !message) return;
 
-    setMessages([...messages, {role: "user", content: message}]);
+    // Add the message to the UI
+    setMessages([
+      ...messages,
+      {role: "user", content: message},
+    ]);
     setMessage("");
 
     setLoading(true);
-    // TODO: generate the response
+
+    (async () => {
+      // Generate a response from the assistant
+      const assistantId = "asst_IhYqLxKvlFxHKGUcJSPGn04m";
+      const response = await Parse.Cloud.run("addMessage", {threadId, assistantId, message});
+      setMessages(messages => [
+        ...messages,
+        {role: "assistant", content: response},
+      ]);
+
+      setLoading(false);
+    })();
   }
 
   function onNewThread() {
-    if (loading) return;
+    if (loading || !threadId) return;
 
     setLoading(true);
-    // TODO: create a new thread and fetch messages
+
+    (async () => {
+      // Create a new thread and reset the UI
+      setThreadId(await Parse.Cloud.run("createThread"));
+      setMessages([{role: "assistant", content: initialMessage}]);
+      setLoading(false);
+    })();
   }
 
   return (
@@ -44,14 +83,19 @@ function App() {
         <h1 className="text-3xl font-bold">
           back4app-openai-virtual-assistant
         </h1>
-        <p>A simple virtual assistant using OpenAI + Back4app.</p>
+        <p>
+          An AI-powered virtual assistant built using OpenAI + Back4app.
+        </p>
       </div>
       <div className="space-y-2">
         {messages.map((message, index) => {
-          if (message.role === "assistant") {
-            return <AssistantMessage key={index} content={message.content}/>;
-          } else {
-            return <UserMessage key={index} content={message.content}/>;
+          switch (message.role) {
+            case "assistant":
+              return <AssistantMessage key={index} content={message.content}/>;
+            case "user":
+              return <UserMessage key={index} content={message.content}/>;
+            default:
+              return <></>;
           }
         })}
         {loading && <Spinner/>}
